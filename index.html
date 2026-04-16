@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>积存金记账 | 批次管理 & 最低价优先出库</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(145deg, #f5f7fc 0%, #eef2f5 100%);
+            padding: 30px 24px 50px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            margin-bottom: 28px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, #c7a252, #b8860b);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+        }
+        .header p {
+            color: #5a6874;
+            font-size: 0.9rem;
+            margin-top: 8px;
+        }
+
+        /* 卡片通用样式 */
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 28px;
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.02);
+            margin-bottom: 28px;
+            border: 1px solid rgba(255,255,240,0.6);
+            transition: all 0.2s;
+        }
+        .card-header {
+            padding: 1.2rem 1.8rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+            border-radius: 28px;
+            background: rgba(255, 255, 255, 0.6);
+        }
+        .card-header:hover {
+            background: rgba(255, 255, 240, 0.8);
+        }
+        .card-title {
+            font-size: 1.35rem;
+            font-weight: 600;
+            color: #2c3e2f;
+            border-left: 5px solid #e6b422;
+            padding-left: 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .toggle-icon {
+            font-size: 1.4rem;
+            transition: transform 0.2s;
+            color: #b68b40;
+        }
+        .card-content {
+            padding: 0 1.8rem 1.5rem 1.8rem;
+            display: none;
+            border-top: 1px solid #e9edf2;
+        }
+        .card-content.open {
+            display: block;
+        }
+
+        .form-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: flex-end;
+        }
+        .form-group {
+            flex: 1;
+            min-width: 140px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #5f6c7a;
+            margin-bottom: 6px;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 12px 12px;
+            border: 1px solid #dce3ec;
+            border-radius: 18px;
+            font-size: 0.9rem;
+            background: white;
+            transition: 0.2s;
+            outline: none;
+        }
+        .form-group input:focus, .form-group select:focus {
+            border-color: #e6b422;
+            box-shadow: 0 0 0 3px rgba(230,180,34,0.2);
+        }
+        .total-preview {
+            background: #f8f3e6;
+            border-radius: 18px;
+            padding: 12px 14px;
+            font-weight: 600;
+            color: #b87c1e;
+            font-size: 1rem;
+            text-align: center;
+        }
+        .btn {
+            background: #2c3e2f;
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .btn-primary {
+            background: #d4a13e;
+            color: #2c2b26;
+        }
+        .btn-primary:hover {
+            background: #e6b422;
+            transform: translateY(-2px);
+        }
+        .btn-outline {
+            background: transparent;
+            border: 1px solid #cbd5e1;
+            color: #2d3e50;
+        }
+        .btn-outline:hover {
+            background: #f1f5f9;
+        }
+        .flex-btns {
+    display: flex;
+    gap: 12px;
+    margin-left: auto;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+}
+
+        /* 统计卡片 */
+        .holding-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px;
+    margin-bottom: 28px;
+}
+
+/* 小屏幕适配 */
+@media (max-width: 800px) {
+    .holding-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .flex-btns {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        margin-left: 0;
+        gap: 8px;
+        width: 100%;
+    }
+    .flex-btns .btn {
+        text-align: center;
+        justify-self: stretch;
+    }
+}
+        .stat-card {
+            background: white;
+            border-radius: 24px;
+            padding: 1.2rem 0.8rem;
+            text-align: center;
+            box-shadow: 0 6px 14px rgba(0,0,0,0.03);
+            border: 1px solid #edf2f7;
+        }
+        .stat-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            color: #7f8c8d;
+            letter-spacing: 1px;
+        }
+        .stat-value {
+            font-size: 1.7rem;
+            font-weight: 700;
+            color: #2c3e2f;
+            margin-top: 8px;
+        }
+        .stat-sub {
+            font-size: 0.7rem;
+            color: #b68b40;
+            margin-top: 5px;
+        }
+
+        .toolbar {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        /* 滚动表格容器 */
+        .scrollable-table {
+            max-height: 400px;
+            overflow-y: auto;
+            border-radius: 24px;
+            /* 自定义滚动条样式 - 半透明细条 */
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 #f1f5f9;
+        }
+        .scrollable-table::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .scrollable-table::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 10px;
+        }
+        .scrollable-table::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+        .scrollable-table::-webkit-scrollbar-thumb:hover {
+            background: #a0aec0;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        .data-table th {
+            text-align: left;
+            padding: 14px 12px;
+            background-color: #faf6ed;
+            color: #5c4b2a;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .data-table td {
+            padding: 12px 12px;
+            border-bottom: 1px solid #e9edf2;
+            vertical-align: middle;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 50px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        .badge-buy { background: #e2f3e4; color: #2b6e3c; }
+        .badge-sell { background: #ffe6e5; color: #c23d2b; }
+        .action-icons button {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1.2rem;
+            margin: 0 4px;
+            padding: 4px 6px;
+            border-radius: 30px;
+        }
+        .edit-btn { color: #e6b422; }
+        .delete-btn { color: #bf6f5a; }
+        .action-icons button:hover { background: #f1f3f7; }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: white;
+            max-width: 450px;
+            width: 90%;
+            border-radius: 36px;
+            padding: 1.8rem;
+        }
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 24px;
+        }
+        @media (max-width: 720px) {
+            body { padding: 20px 16px; }
+            .card-header { padding: 1rem 1.2rem; }
+            .card-content { padding: 0 1.2rem 1.2rem 1.2rem; }
+            .form-group { min-width: 100%; }
+        }
+        footer {
+            text-align: center;
+            font-size: 0.7rem;
+            color: #8f9eb2;
+            margin-top: 20px;
+        }
+        .warning-note {
+            font-size: 0.7rem;
+            color: #c47e3a;
+            margin-top: 8px;
+            text-align: center;
+        }
+        .batch-table .remain-positive {
+            font-weight: 600;
+            color: #2c6e2c;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>🏅 积存金 · 批次记账</h1>
+        <p>购入批次明细 | 卖出时按「单价最低优先」扣除 | 剩余库存一目了然</p>
+    </div>
+
+    <!-- 可折叠卡片：记录交易 -->
+    <div class="card" id="addTransactionCard">
+        <div class="card-header" id="cardHeader">
+            <div class="card-title">📝 记录交易 (点击展开)</div>
+            <span class="toggle-icon" id="toggleIcon">▼</span>
+        </div>
+        <div class="card-content" id="cardContent">
+            <div class="form-row">
+                <div class="form-group"><label>交易类型</label><select id="transType"><option value="buy">📈 买入 (增持)</option><option value="sell">📉 卖出 (减持)</option></select></div>
+                <div class="form-group"><label>交易日期</label><input type="date" id="transDate"></div>
+                <div class="form-group"><label>克数 (g)</label><input type="number" id="grams" step="0.01" placeholder="0.00"></div>
+                <div class="form-group"><label>单价 (元/g) AUTD</label><input type="number" id="price" step="0.01" placeholder="0.00"></div>
+                <div class="form-group"><label>总价 (元) 自动</label><div class="total-preview" id="totalPreview">0.00</div></div>
+                <div class="form-group" style="flex:0.4"><button class="btn btn-primary" id="addRecordBtn" style="width:100%">✅ 记录交易</button></div>
+            </div>
+            <div class="warning-note">⚠️ 卖出时优先扣除「单价最低」的批次，不足则依次扣除次低价批次。</div>
+        </div>
+    </div>
+
+    <!-- 统计面板 -->
+    <div class="holding-stats">
+        <div class="stat-card"><div class="stat-label">📦 当前持有</div><div class="stat-value" id="netHolding">0.00 g</div><div class="stat-sub">剩余克数</div></div>
+        <div class="stat-card"><div class="stat-label">⚖️ 持仓均价</div><div class="stat-value" id="avgCost">0.00 元/g</div><div class="stat-sub">剩余批次加权均价</div></div>
+        <div class="stat-card"><div class="stat-label">💰 持仓总成本</div><div class="stat-value" id="holdingCost">0.00 元</div><div class="stat-sub">剩余仓位占用资金</div></div>
+        <div class="stat-card"><div class="stat-label">📈 总收益 (已实现)</div><div class="stat-value" id="totalRealizedProfit">0.00 元</div><div class="stat-sub">卖出收入-卖出成本</div></div>
+    </div>
+
+    <!-- 购入批次明细表格（可滚动） -->
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <div class="card-header" style="cursor: default; background: none; border-bottom: 1px solid #e9edf2;">
+            <div class="card-title">📋 购入批次明细 (按单价排序，剩余克数 > 0 显示)</div>
+        </div>
+        <div class="scrollable-table">
+            <table class="data-table batch-table">
+                <thead>
+    <tr>
+        <th>购入日期</th>
+        <th>原始克数(g)</th>
+        <th>单价(元/g)</th>
+        <th>剩余克数(g)</th>
+        <th>操作</th>
+    </tr>
+</thead>
+                <tbody id="batchTbody">
+                    <tr><td colspan="7" style="text-align:center;">暂无购入批次，请添加买入记录</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="warning-note" style="margin: 8px 0 12px 0;">🔽 卖出时自动从「单价最低」的批次开始扣除。</div>
+    </div>
+
+    <!-- 交易流水账（可滚动） -->
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <div class="card-header" style="cursor: default; background: none; border-bottom: 1px solid #e9edf2;">
+            <div class="card-title">📜 交易流水账</div>
+            <div class="flex-btns">
+                <button class="btn btn-outline" id="exportConfigBtn">📤 导出配置</button>
+                <button class="btn btn-outline" id="importConfigBtn">📥 导入配置</button>
+                <input type="file" id="importFileInput" accept=".json" style="display: none;">
+                <button class="btn btn-outline" id="clearAllBtn">🗑️ 清空所有</button>
+                <button class="btn btn-outline" id="loadSampleBtn">📋 载入示例</button>
+            </div>
+        </div>
+        <div class="scrollable-table">
+            <table class="data-table">
+                <thead>
+                    <tr><th>类型</th><th>日期</th><th>克数(g)</th><th>单价(元/g)</th><th>总价(元)</th><th>操作</th></tr>
+                </thead>
+                <tbody id="recordsTbody">
+                    <tr><td colspan="6" style="text-align:center;">暂无记录</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <footer>卖出逻辑：按批次单价升序扣除，实现“最低价优先出库”，已实现收益准确计算。</footer>
+</div>
+
+<!-- 编辑模态框 -->
+<div id="editModal" class="modal">
+    <div class="modal-content"><h3>✏️ 编辑交易记录</h3>
+        <div class="form-group"><label>交易类型</label><select id="editType"><option value="buy">买入</option><option value="sell">卖出</option></select></div>
+        <div class="form-group"><label>日期</label><input type="date" id="editDate"></div>
+        <div class="form-group"><label>克数 (g)</label><input type="number" id="editGrams" step="0.01"></div>
+        <div class="form-group"><label>单价 (元/g)</label><input type="number" id="editPrice" step="0.01"></div>
+        <div class="form-group"><label>总价</label><div class="total-preview" id="editTotalPreview">0.00</div></div>
+        <div class="modal-buttons"><button class="btn btn-outline" id="closeModalBtn">取消</button><button class="btn btn-primary" id="saveEditBtn">保存</button></div>
+    </div>
+</div>
+<!-- 批次选择模态框（卖出时） -->
+<div id="batchSelectModal" class="modal">
+    <div class="modal-content" style="max-width: 700px;">
+        <h3>✏️ 选择要卖出的批次</h3>
+        <p style="margin-bottom: 12px; font-size: 0.85rem;">勾选需要扣除的批次（按勾选顺序依次扣除），不勾选则按默认规则（单价最低优先）扣除。</p>
+        <div class="table-wrapper" style="max-height: 400px; overflow-y: auto;">
+            <table class="data-table" id="batchSelectTable">
+                <thead>
+                    <tr><th>选择</th><th>购入日期</th><th>剩余克数(g)</th><th>单价(元/g)</th><th>状态</th></tr>
+                </thead>
+                <tbody id="batchSelectTbody"></tbody>
+            </table>
+        </div>
+        <div class="modal-buttons">
+            <button class="btn btn-outline" id="cancelBatchSelectBtn">取消交易</button>
+            <button class="btn btn-primary" id="confirmBatchSelectBtn">下一步（扣除）</button>
+        </div>
+    </div>
+</div>
+<script>
+    // ---------- 数据结构 ----------
+    let transactions = [];      // 买卖流水 { id, type, date, grams, price, total }
+    let batches = [];           // 购入批次 { id, buyTransactionId, date, originalGrams, price, remainingGrams }
+    let totalRealizedProfit = 0;
+
+    // DOM 元素
+    const transType = document.getElementById('transType');
+    const transDate = document.getElementById('transDate');
+    const gramsInput = document.getElementById('grams');
+    const priceInput = document.getElementById('price');
+    const totalPreview = document.getElementById('totalPreview');
+    const addBtn = document.getElementById('addRecordBtn');
+    const recordsTbody = document.getElementById('recordsTbody');
+    const batchTbody = document.getElementById('batchTbody');
+    const clearAllBtn = document.getElementById('clearAllBtn');
+    const loadSampleBtn = document.getElementById('loadSampleBtn');
+    const exportConfigBtn = document.getElementById('exportConfigBtn');
+    const importConfigBtn = document.getElementById('importConfigBtn');
+    const importFileInput = document.getElementById('importFileInput');
+
+    const editModal = document.getElementById('editModal');
+    const editType = document.getElementById('editType');
+    const editDate = document.getElementById('editDate');
+    const editGrams = document.getElementById('editGrams');
+    const editPrice = document.getElementById('editPrice');
+    const editTotalPreview = document.getElementById('editTotalPreview');
+    const closeModalBtn = document.getElementById('closeModalBtn');
+    const saveEditBtn = document.getElementById('saveEditBtn');
+    let editingId = null;
+    let pendingSell = null; // 存储待卖出的 { date, grams, price, total }
+
+    // 折叠卡片逻辑
+    const cardHeader = document.getElementById('cardHeader');
+    const cardContent = document.getElementById('cardContent');
+    const toggleIcon = document.getElementById('toggleIcon');
+    cardHeader.addEventListener('click', () => {
+        const isOpen = cardContent.classList.contains('open');
+        if (isOpen) {
+            cardContent.classList.remove('open');
+            toggleIcon.textContent = '▼';
+        } else {
+            cardContent.classList.add('open');
+            toggleIcon.textContent = '▲';
+        }
+    });
+    // 默认收起，但为了首次加载时可能因表单预览而强制展开，不加 open 类
+    cardContent.classList.remove('open');
+    toggleIcon.textContent = '▼';
+
+    // 辅助函数
+    function computeTotal(grams, price) { let g = parseFloat(grams)||0, p = parseFloat(price)||0; return Math.round(g * p * 100)/100; }
+    function setDefaultDate() { if (!transDate.value) transDate.value = new Date().toISOString().slice(0,10); }
+    setDefaultDate();
+    function updateAddPreview() { let total = computeTotal(gramsInput.value, priceInput.value); totalPreview.innerText = total.toFixed(2); }
+    gramsInput.addEventListener('input', updateAddPreview);
+    priceInput.addEventListener('input', updateAddPreview);
+
+    // 存储
+    function saveToLocal() { localStorage.setItem('gold_transactions', JSON.stringify(transactions)); localStorage.setItem('gold_batches', JSON.stringify(batches)); localStorage.setItem('gold_totalProfit', totalRealizedProfit); }
+    function loadFromLocal() {
+        const storedTrans = localStorage.getItem('gold_transactions');
+        const storedBatches = localStorage.getItem('gold_batches');
+        const storedProfit = localStorage.getItem('gold_totalProfit');
+        if(storedTrans) transactions = JSON.parse(storedTrans);
+        else transactions = [];
+        if(storedBatches) batches = JSON.parse(storedBatches);
+        else batches = [];
+        if(storedProfit) totalRealizedProfit = parseFloat(storedProfit);
+        else totalRealizedProfit = 0;
+        batches = batches.filter(b => b && typeof b.remainingGrams === 'number' && b.remainingGrams > 0);
+    }
+
+    function getStatsFromBatches() {
+        let totalRemainGrams = 0, totalRemainCost = 0;
+        for(let b of batches) {
+            totalRemainGrams += b.remainingGrams;
+            totalRemainCost += b.remainingGrams * b.price;
+        }
+        let avgCost = totalRemainGrams > 0 ? totalRemainCost / totalRemainGrams : 0;
+        return { totalRemainGrams, totalRemainCost, avgCost };
+    }
+
+    function refreshAll() {
+        renderBatches();
+        renderTransactions();
+        updateStatsPanel();
+        saveToLocal();
+    }
+
+    function renderBatches() {
+    if(!batchTbody) return;
+    if(batches.length === 0) {
+        batchTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">暂无购入批次，请添加买入记录</td></tr>';
+        return;
+    }
+    const sorted = [...batches].sort((a,b) => a.price - b.price);
+    let html = '';
+    for(let b of sorted) {
+        html += `<tr>
+            <td>${b.date}</td>
+            <td>${b.originalGrams.toFixed(2)} g</td>
+            <td>${b.price.toFixed(2)} ¥</td>
+            <td class="${b.remainingGrams > 0 ? 'remain-positive' : ''}">${b.remainingGrams.toFixed(2)} g</td>
+            <td class="action-icons"><button class="delete-batch-btn" data-id="${b.id}" title="删除此批次(同时删除对应买入记录)">🗑️</button></td>
+        </tr>`;
+    }
+    batchTbody.innerHTML = html;
+    // 绑定删除批次按钮
+    document.querySelectorAll('.delete-batch-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const batchId = Number(btn.getAttribute('data-id'));
+            const batch = batches.find(b => b.id === batchId);
+            if(batch && confirm(`确定删除 ${batch.date} 购入 ${batch.originalGrams}g 单价${batch.price} 的批次？\n这将同时删除对应的买入交易记录，且不可逆。`)) {
+                transactions = transactions.filter(t => t.id !== batch.buyTransactionId);
+                rebuildBatchesFromTransactions();
+                refreshAll();
+            }
+        });
+    });
+}
+
+    function rebuildBatchesFromTransactions() {
+        const buyTransactions = transactions.filter(t => t.type === 'buy').sort((a,b) => new Date(a.date) - new Date(b.date));
+        const sellTransactions = transactions.filter(t => t.type === 'sell').sort((a,b) => new Date(a.date) - new Date(b.date));
+        let newBatches = [];
+        for(let buy of buyTransactions) {
+            newBatches.push({
+                id: buy.id,
+                buyTransactionId: buy.id,
+                date: buy.date,
+                originalGrams: buy.grams,
+                price: buy.price,
+                remainingGrams: buy.grams
+            });
+        }
+        for(let sell of sellTransactions) {
+            let sellGrams = sell.grams;
+            newBatches.sort((a,b) => a.price - b.price);
+            for(let i=0; i<newBatches.length && sellGrams > 0; i++) {
+                let batch = newBatches[i];
+                if(batch.remainingGrams <= 0) continue;
+                let deduct = Math.min(batch.remainingGrams, sellGrams);
+                batch.remainingGrams -= deduct;
+                sellGrams -= deduct;
+            }
+        }
+        batches = newBatches.filter(b => b.remainingGrams > 0);
+        recalcTotalProfit();
+    }
+
+    function recalcTotalProfit() {
+        let totalBuyCost = 0, totalSellIncome = 0;
+        for(let t of transactions) {
+            if(t.type === 'buy') totalBuyCost += t.total;
+            else totalSellIncome += t.total;
+        }
+        const { totalRemainCost } = getStatsFromBatches();
+        totalRealizedProfit = totalSellIncome - (totalBuyCost - totalRemainCost);
+    }
+
+    function executeSell(date, sellGrams, sellPrice, sellTotal) {
+        if(sellGrams <= 0) { alert("卖出克数必须大于0"); return false; }
+        let currentTotal = batches.reduce((sum,b) => sum + b.remainingGrams, 0);
+        if(sellGrams > currentTotal + 0.0001) {
+            alert(`卖出失败！当前持有总量 ${currentTotal.toFixed(2)} g，无法卖出 ${sellGrams} g。`);
+            return false;
+        }
+        let sortedBatches = [...batches].sort((a,b) => a.price - b.price);
+        let remainingToSell = sellGrams;
+        let costOfSold = 0;
+        for(let i=0; i<sortedBatches.length && remainingToSell > 0; i++) {
+            let batch = sortedBatches[i];
+            if(batch.remainingGrams <= 0) continue;
+            let deduct = Math.min(batch.remainingGrams, remainingToSell);
+            costOfSold += deduct * batch.price;
+            batch.remainingGrams -= deduct;
+            remainingToSell -= deduct;
+        }
+        batches = batches.map(b => {
+            const updated = sortedBatches.find(sb => sb.id === b.id);
+            if(updated) return updated;
+            return b;
+        }).filter(b => b.remainingGrams > 0);
+        const profitThisSell = sellTotal - costOfSold;
+        totalRealizedProfit += profitThisSell;
+        const newId = Date.now() + Math.floor(Math.random()*10000);
+        const sellRecord = { id: newId, type: 'sell', date: date, grams: sellGrams, price: sellPrice, total: sellTotal };
+        transactions.push(sellRecord);
+        return true;
+    }
+
+    function executeBuy(date, grams, price, total) {
+        const newId = Date.now() + Math.floor(Math.random()*10000);
+        const buyRecord = { id: newId, type: 'buy', date: date, grams: grams, price: price, total: total };
+        transactions.push(buyRecord);
+        batches.push({
+            id: newId,
+            buyTransactionId: newId,
+            date: date,
+            originalGrams: grams,
+            price: price,
+            remainingGrams: grams
+        });
+        return true;
+    }
+
+    function addTransaction() {
+        let type = transType.value;
+        let date = transDate.value;
+        let grams = parseFloat(gramsInput.value);
+        let price = parseFloat(priceInput.value);
+        if(!date) { alert("请填写日期"); return; }
+        if(isNaN(grams) || grams <= 0) { alert("克数需大于0"); return; }
+        if(isNaN(price) || price <= 0) { alert("单价需大于0"); return; }
+        let total = computeTotal(grams, price);
+        if(total <= 0) { alert("总价异常"); return; }
+        if(type === 'buy') {
+    executeBuy(date, grams, price, total);
+} else {
+    // 弹出批次选择窗口
+    openBatchSelectionModal(date, grams, price, total);
+    return;
+}
+        gramsInput.value = '';
+        priceInput.value = '';
+        totalPreview.innerText = '0.00';
+        setDefaultDate();
+        refreshAll();
+    }
+
+    function renderTransactions() {
+        if(!recordsTbody) return;
+        if(transactions.length === 0) {
+            recordsTbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无交易记录</td></tr>';
+            return;
+        }
+        const sorted = [...transactions].sort((a,b)=>new Date(b.date)-new Date(a.date));
+        let html = '';
+        for(let t of sorted) {
+            const typeText = t.type === 'buy' ? '买入' : '售出';
+            const badgeClass = t.type === 'buy' ? 'badge-buy' : 'badge-sell';
+            html += `<tr>
+                <td><span class="badge ${badgeClass}">${typeText}</span></td>
+                <td>${t.date}</td>
+                <td>${t.grams.toFixed(2)} g</td>
+                <td>${t.price.toFixed(2)} ¥</td>
+                <td>${t.total.toFixed(2)} ¥</td>
+                <td class="action-icons"><button class="edit-trans-btn" data-id="${t.id}">✏️</button><button class="delete-trans-btn" data-id="${t.id}">🗑️</button></td>
+            </tr>`;
+        }
+        recordsTbody.innerHTML = html;
+        document.querySelectorAll('.edit-trans-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => { openEditModal(Number(btn.getAttribute('data-id'))); });
+        });
+        document.querySelectorAll('.delete-trans-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => { 
+                const id = Number(btn.getAttribute('data-id'));
+                if(confirm("删除此交易记录会重建所有批次和收益，确定吗？")) {
+                    transactions = transactions.filter(t => t.id !== id);
+                    rebuildBatchesFromTransactions();
+                    refreshAll();
+                }
+            });
+        });
+    }
+
+    function openEditModal(id) {
+        const record = transactions.find(t => t.id === id);
+        if(!record) return;
+        editingId = id;
+        editType.value = record.type;
+        editDate.value = record.date;
+        editGrams.value = record.grams;
+        editPrice.value = record.price;
+        updateEditPreview();
+        editModal.style.display = 'flex';
+    }
+    function updateEditPreview() { let total = computeTotal(editGrams.value, editPrice.value); editTotalPreview.innerText = total.toFixed(2); }
+    editGrams.addEventListener('input', updateEditPreview);
+    editPrice.addEventListener('input', updateEditPreview);
+    function closeModal() { editModal.style.display = 'none'; editingId = null; }
+    function saveEdit() {
+        if(editingId === null) return;
+        const newType = editType.value;
+        const newDate = editDate.value;
+        const newGrams = parseFloat(editGrams.value);
+        const newPrice = parseFloat(editPrice.value);
+        if(!newDate || isNaN(newGrams) || newGrams<=0 || isNaN(newPrice) || newPrice<=0) { alert("数据无效"); return; }
+        const newTotal = computeTotal(newGrams, newPrice);
+        const index = transactions.findIndex(t => t.id === editingId);
+        if(index !== -1) {
+            transactions[index] = { ...transactions[index], type: newType, date: newDate, grams: newGrams, price: newPrice, total: newTotal };
+            rebuildBatchesFromTransactions();
+            refreshAll();
+        }
+        closeModal();
+    }
+// 打开批次选择模态框
+function openBatchSelectionModal(date, grams, price, total) {
+    pendingSell = { date, grams, price, total };
+    const tbody = document.getElementById('batchSelectTbody');
+    if (!tbody) return;
+    if (batches.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">无可卖出批次</td></tr>';
+        document.getElementById('batchSelectModal').style.display = 'flex';
+        return;
+    }
+    let html = '';
+    for (let b of batches) {
+        html += `<tr>
+            <td><input type="checkbox" class="batch-checkbox" data-id="${b.id}" data-remaining="${b.remainingGrams}"></td>
+            <td>${b.date}</td>
+            <td>${b.remainingGrams.toFixed(2)} g</td>
+            <td>${b.price.toFixed(2)} ¥</td>
+            <td><span class="badge badge-buy">可扣</span></td>
+        </tr>`;
+    }
+    tbody.innerHTML = html;
+    document.getElementById('batchSelectModal').style.display = 'flex';
+}
+
+function closeBatchSelectModal() {
+    document.getElementById('batchSelectModal').style.display = 'none';
+    pendingSell = null;
+}
+
+function executeSellWithSelectedBatch(selectedBatchIds) {
+    if (!pendingSell) return;
+    const { date, grams, price, total } = pendingSell;
+    let remainingToSell = grams;
+    let costOfSold = 0;
+    // 按用户勾选的顺序依次扣除
+    for (let batchId of selectedBatchIds) {
+        if (remainingToSell <= 0) break;
+        const batch = batches.find(b => b.id === batchId);
+        if (!batch || batch.remainingGrams <= 0) continue;
+        let deduct = Math.min(batch.remainingGrams, remainingToSell);
+        costOfSold += deduct * batch.price;
+        batch.remainingGrams -= deduct;
+        remainingToSell -= deduct;
+    }
+    // 如果勾选的批次不够扣，则用剩余批次按默认规则（单价最低优先）继续扣
+    if (remainingToSell > 0) {
+        let remainingBatches = batches.filter(b => b.remainingGrams > 0);
+        remainingBatches.sort((a,b) => a.price - b.price);
+        for (let batch of remainingBatches) {
+            if (remainingToSell <= 0) break;
+            let deduct = Math.min(batch.remainingGrams, remainingToSell);
+            costOfSold += deduct * batch.price;
+            batch.remainingGrams -= deduct;
+            remainingToSell -= deduct;
+        }
+    }
+    if (remainingToSell > 0.0001) {
+        alert("卖出失败：可用批次不足！");
+        closeBatchSelectModal();
+        return false;
+    }
+    batches = batches.filter(b => b.remainingGrams > 0);
+    const profitThisSell = total - costOfSold - (grams * 6);
+    totalRealizedProfit += profitThisSell;
+    const newId = Date.now() + Math.floor(Math.random()*10000);
+    const sellRecord = { id: newId, type: 'sell', date: date, grams: grams, price: price, total: total };
+    transactions.push(sellRecord);
+    closeBatchSelectModal();
+    refreshAll();
+    return true;
+}
+
+// 监听批次选择模态框按钮
+document.getElementById('confirmBatchSelectBtn')?.addEventListener('click', () => {
+    const checkboxes = document.querySelectorAll('#batchSelectTbody .batch-checkbox:checked');
+    if (checkboxes.length === 0) {
+        // 未选择任何批次，按默认规则（单价最低优先）执行卖出
+        if (pendingSell) {
+            const { date, grams, price, total } = pendingSell;
+            closeBatchSelectModal();
+            executeSell(date, grams, price, total);
+            refreshAll();
+        }
+    } else {
+        const selectedIds = Array.from(checkboxes).map(cb => Number(cb.getAttribute('data-id')));
+        executeSellWithSelectedBatch(selectedIds);
+    }
+});
+document.getElementById('cancelBatchSelectBtn')?.addEventListener('click', () => {
+    closeBatchSelectModal();
+});
+    function updateStatsPanel() {
+        const { totalRemainGrams, totalRemainCost, avgCost } = getStatsFromBatches();
+        document.getElementById('netHolding').innerHTML = totalRemainGrams.toFixed(2) + ' g';
+        document.getElementById('avgCost').innerHTML = avgCost.toFixed(2) + ' 元/g';
+        document.getElementById('holdingCost').innerHTML = totalRemainCost.toFixed(2) + ' 元';
+        const profitElem = document.getElementById('totalRealizedProfit');
+        profitElem.innerHTML = (totalRealizedProfit>=0?'▲ ':'▼ ') + totalRealizedProfit.toFixed(2) + ' 元';
+        profitElem.style.color = totalRealizedProfit >=0 ? '#2b6e3c' : '#b1624b';
+    }
+
+    function clearAll() {
+        if(confirm("⚠️ 永久清空所有记录（买入/卖出/批次）")) {
+            transactions = [];
+            batches = [];
+            totalRealizedProfit = 0;
+            refreshAll();
+        }
+    }
+    function loadSample() {
+        if(transactions.length && !confirm("覆盖现有数据？")) return;
+        const sampleTrans = [
+            { id: 1001, type: 'buy', date: '2025-01-05', grams: 20, price: 300, total: 6000 },
+            { id: 1002, type: 'buy', date: '2025-01-12', grams: 20, price: 310, total: 6200 },
+            { id: 2001, type: 'sell', date: '2025-01-15', grams: 15, price: 350, total: 5250 },
+            { id: 1003, type: 'buy', date: '2025-01-20', grams: 20, price: 320, total: 6400 },
+            { id: 2002, type: 'sell', date: '2025-01-25', grams: 15, price: 360, total: 5400 },
+            { id: 1004, type: 'buy', date: '2025-02-01', grams: 20, price: 330, total: 6600 },
+            { id: 2003, type: 'sell', date: '2025-02-05', grams: 10, price: 355, total: 3550 },
+            { id: 1005, type: 'buy', date: '2025-02-10', grams: 20, price: 340, total: 6800 },
+            { id: 2004, type: 'sell', date: '2025-02-15', grams: 10, price: 365, total: 3650 },
+            { id: 2005, type: 'sell', date: '2025-02-20', grams: 15, price: 370, total: 5550 },
+            { id: 2006, type: 'sell', date: '2025-02-25', grams: 15, price: 380, total: 5700 }
+        ];
+        transactions = sampleTrans.map(t => ({ ...t, id: Date.now()+Math.random()*10000+t.id }));
+        rebuildBatchesFromTransactions();
+        refreshAll();
+    }
+
+    function exportConfig() {
+        const config = { version: "1.0", transactions: transactions, batches: batches, totalRealizedProfit: totalRealizedProfit };
+        const dataStr = JSON.stringify(config, null, 2);
+        const blob = new Blob([dataStr], {type: "application/json"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `gold_accounting_${new Date().toISOString().slice(0,19)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+    function importConfig(file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const config = JSON.parse(e.target.result);
+                if (config.transactions && Array.isArray(config.transactions)) transactions = config.transactions;
+                else throw new Error("无效配置");
+                batches = config.batches && Array.isArray(config.batches) ? config.batches : [];
+                totalRealizedProfit = typeof config.totalRealizedProfit === 'number' ? config.totalRealizedProfit : 0;
+                batches = batches.filter(b => b && typeof b.remainingGrams === 'number' && b.remainingGrams > 0);
+                rebuildBatchesFromTransactions();
+                refreshAll();
+                alert("导入成功");
+            } catch(err) { alert("导入失败："+err.message); }
+        };
+        reader.readAsText(file);
+    }
+    function triggerImport() { importFileInput.click(); }
+    importFileInput.addEventListener('change', (e) => { if(e.target.files.length) { importConfig(e.target.files[0]); importFileInput.value = ''; } });
+
+    addBtn.addEventListener('click', addTransaction);
+    clearAllBtn.addEventListener('click', clearAll);
+    loadSampleBtn.addEventListener('click', loadSample);
+    exportConfigBtn.addEventListener('click', exportConfig);
+    importConfigBtn.addEventListener('click', triggerImport);
+    closeModalBtn.addEventListener('click', closeModal);
+    saveEditBtn.addEventListener('click', saveEdit);
+    window.addEventListener('click', (e) => { if(e.target === editModal) closeModal(); });
+
+    loadFromLocal();
+    rebuildBatchesFromTransactions();
+    refreshAll();
+    updateAddPreview();
+</script>
+</body>
+</html>
