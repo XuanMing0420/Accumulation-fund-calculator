@@ -574,33 +574,57 @@
 }
 
     function rebuildBatchesFromTransactions() {
-        const buyTransactions = transactions.filter(t => t.type === 'buy').sort((a,b) => new Date(a.date) - new Date(b.date));
-        const sellTransactions = transactions.filter(t => t.type === 'sell').sort((a,b) => new Date(a.date) - new Date(b.date));
-        let newBatches = [];
-        for(let buy of buyTransactions) {
-            newBatches.push({
-                id: buy.id,
-                buyTransactionId: buy.id,
-                date: buy.date,
-                originalGrams: buy.grams,
-                price: buy.price,
-                remainingGrams: buy.grams
-            });
-        }
-        for(let sell of sellTransactions) {
+    // 1. 重建所有买入批次
+    const buyTransactions = transactions.filter(t => t.type === 'buy').sort((a,b) => new Date(a.date) - new Date(b.date));
+    let newBatches = [];
+    for(let buy of buyTransactions) {
+        newBatches.push({
+            id: buy.id,
+            buyTransactionId: buy.id,
+            date: buy.date,
+            originalGrams: buy.grams,
+            price: buy.price,
+            remainingGrams: buy.grams
+        });
+    }
+    // 2. 按时间顺序处理卖出，如果卖出记录有 deductions 则使用，否则按低价优先扣除
+    const sellTransactions = transactions.filter(t => t.type === 'sell').sort((a,b) => new Date(a.date) - new Date(b.date));
+    for(let sell of sellTransactions) {
+        if (sell.deductions && Array.isArray(sell.deductions) && sell.deductions.length > 0) {
+            // 有历史扣除明细，按明细恢复
+            for(let ded of sell.deductions) {
+                const batch = newBatches.find(b => b.id === ded.batchId);
+                if (batch && batch.remainingGrams >= ded.grams) {
+                    batch.remainingGrams -= ded.grams;
+                } else {
+                    // 数据不一致，回退到低价优先（兼容旧数据）
+                    let remaining = ded.grams;
+                    let sorted = [...newBatches].sort((a,b) => a.price - b.price);
+                    for(let b of sorted) {
+                        if (remaining <= 0) break;
+                        if (b.remainingGrams <= 0) continue;
+                        let deduct = Math.min(b.remainingGrams, remaining);
+                        b.remainingGrams -= deduct;
+                        remaining -= deduct;
+                    }
+                }
+            }
+        } else {
+            // 旧数据或没有记录明细，按低价优先扣除
             let sellGrams = sell.grams;
-            newBatches.sort((a,b) => a.price - b.price);
-            for(let i=0; i<newBatches.length && sellGrams > 0; i++) {
-                let batch = newBatches[i];
-                if(batch.remainingGrams <= 0) continue;
+            let sorted = [...newBatches].sort((a,b) => a.price - b.price);
+            for(let batch of sorted) {
+                if (sellGrams <= 0) break;
+                if (batch.remainingGrams <= 0) continue;
                 let deduct = Math.min(batch.remainingGrams, sellGrams);
                 batch.remainingGrams -= deduct;
                 sellGrams -= deduct;
             }
         }
-        batches = newBatches.filter(b => b.remainingGrams > 0);
-        recalcTotalProfit();
     }
+    batches = newBatches.filter(b => b.remainingGrams > 0);
+    recalcTotalProfit();
+}
 
     function recalcTotalProfit() {
         let totalBuyCost = 0, totalSellIncome = 0;
@@ -613,35 +637,37 @@
     }
 
     function executeSell(date, sellGrams, sellPrice, sellTotal) {
-        if(sellGrams <= 0) { alert("卖出克数必须大于0"); return false; }
-        let currentTotal = batches.reduce((sum,b) => sum + b.remainingGrams, 0);
-        if(sellGrams > currentTotal + 0.0001) {
-            alert(`卖出失败！当前持有总量 ${currentTotal.toFixed(2)} g，无法卖出 ${sellGrams} g。`);
-            return false;
-        }
-        let sortedBatches = [...batches].sort((a,b) => a.price - b.price);
-        let remainingToSell = sellGrams;
-        let costOfSold = 0;
-        for(let i=0; i<sortedBatches.length && remainingToSell > 0; i++) {
-            let batch = sortedBatches[i];
-            if(batch.remainingGrams <= 0) continue;
-            let deduct = Math.min(batch.remainingGrams, remainingToSell);
-            costOfSold += deduct * batch.price;
-            batch.remainingGrams -= deduct;
-            remainingToSell -= deduct;
-        }
-        batches = batches.map(b => {
-            const updated = sortedBatches.find(sb => sb.id === b.id);
-            if(updated) return updated;
-            return b;
-        }).filter(b => b.remainingGrams > 0);
-        const profitThisSell = sellTotal - costOfSold;
-        totalRealizedProfit += profitThisSell;
-        const newId = Date.now() + Math.floor(Math.random()*10000);
-        const sellRecord = { id: newId, type: 'sell', date: date, grams: sellGrams, price: sellPrice, total: sellTotal };
-        transactions.push(sellRecord);
-        return true;
+    if(sellGrams <= 0) { alert("卖出克数必须大于0"); return false; }
+    let currentTotal = batches.reduce((sum,b) => sum + b.remainingGrams, 0);
+    if(sellGrams > currentTotal + 0.0001) {
+        alert(`卖出失败！当前持有总量 ${currentTotal.toFixed(2)} g，无法卖出 ${sellGrams} g。`);
+        return false;
     }
+    let sortedBatches = [...batches].sort((a,b) => a.price - b.price);
+    let remainingToSell = sellGrams;
+    let costOfSold = 0;
+    let deductions = []; // 记录扣除明细 { batchId, grams }
+    for(let i=0; i<sortedBatches.length && remainingToSell > 0; i++) {
+        let batch = sortedBatches[i];
+        if(batch.remainingGrams <= 0) continue;
+        let deduct = Math.min(batch.remainingGrams, remainingToSell);
+        costOfSold += deduct * batch.price;
+        batch.remainingGrams -= deduct;
+        remainingToSell -= deduct;
+        deductions.push({ batchId: batch.id, grams: deduct });
+    }
+    batches = batches.map(b => {
+        const updated = sortedBatches.find(sb => sb.id === b.id);
+        if(updated) return updated;
+        return b;
+    }).filter(b => b.remainingGrams > 0);
+    const profitThisSell = sellTotal - costOfSold;
+    totalRealizedProfit += profitThisSell;
+    const newId = Date.now() + Math.floor(Math.random()*10000);
+    const sellRecord = { id: newId, type: 'sell', date: date, grams: sellGrams, price: sellPrice, total: sellTotal, deductions: deductions };
+    transactions.push(sellRecord);
+    return true;
+}
 
     function executeBuy(date, grams, price, total) {
         const newId = Date.now() + Math.floor(Math.random()*10000);
@@ -783,6 +809,7 @@ function executeSellWithSelectedBatch(selectedBatchIds) {
     const { date, grams, price, total } = pendingSell;
     let remainingToSell = grams;
     let costOfSold = 0;
+    let deductions = []; // 记录扣除明细
     // 按用户勾选的顺序依次扣除
     for (let batchId of selectedBatchIds) {
         if (remainingToSell <= 0) break;
@@ -792,6 +819,7 @@ function executeSellWithSelectedBatch(selectedBatchIds) {
         costOfSold += deduct * batch.price;
         batch.remainingGrams -= deduct;
         remainingToSell -= deduct;
+        deductions.push({ batchId: batch.id, grams: deduct });
     }
     // 如果勾选的批次不够扣，则用剩余批次按默认规则（单价最低优先）继续扣
     if (remainingToSell > 0) {
@@ -803,6 +831,7 @@ function executeSellWithSelectedBatch(selectedBatchIds) {
             costOfSold += deduct * batch.price;
             batch.remainingGrams -= deduct;
             remainingToSell -= deduct;
+            deductions.push({ batchId: batch.id, grams: deduct });
         }
     }
     if (remainingToSell > 0.0001) {
@@ -811,10 +840,10 @@ function executeSellWithSelectedBatch(selectedBatchIds) {
         return false;
     }
     batches = batches.filter(b => b.remainingGrams > 0);
-    const profitThisSell = total - costOfSold - (grams * 6);
+    const profitThisSell = total - costOfSold;
     totalRealizedProfit += profitThisSell;
     const newId = Date.now() + Math.floor(Math.random()*10000);
-    const sellRecord = { id: newId, type: 'sell', date: date, grams: grams, price: price, total: total };
+    const sellRecord = { id: newId, type: 'sell', date: date, grams: grams, price: price, total: total, deductions: deductions };
     transactions.push(sellRecord);
     closeBatchSelectModal();
     refreshAll();
